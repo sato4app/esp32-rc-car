@@ -309,7 +309,7 @@
     const DEADZONE = 0.08;             // 中央付近の遊び（指のぶれで動かないように）
     const BATTERY_EMPTY_MV = 6400;     // 2S Li-ionの残量0%とみなす電圧（ESP32の停止電圧と同じ）
     const BATTERY_FULL_MV = 8400;      // 満充電
-    const SETTINGS_KEY = 'esp32-remote-control-settings';
+    const SETTINGS_KEY = 'esp32-rc-car-settings';
 
     let bluetoothDevice;
     let controlCharacteristic; // 送信用
@@ -685,7 +685,7 @@
 
     // ===== 最新版の確認（タイトルを押す） =====
     // service-worker.js の CACHE_NAME の接頭辞と合わせる（キャッシュ名から版を読み取る）
-    const CACHE_PREFIX = 'esp32-remote-control-';
+    const CACHE_PREFIX = 'esp32-rc-car-';
     const titleBtn = document.getElementById('titleBtn');
     const toast = document.getElementById('toast');
     let toastTimerId = null;

@@ -1,4 +1,4 @@
-## esp32-remote-control - スマホでリモコンカー操作
+## esp32-rc-car - スマホでリモコンカー操作
 
 AndroidのChrome（Web Bluetooth）から、ESP32-C3を載せた2WD戦車式リモコンカーを操作するWebアプリ。
 左右のモーターの回転差で曲がる（戦車式）。
@@ -68,7 +68,7 @@ index.html                           Web側（接続・ジョイスティック�
 manifest.json                        PWA設定（アプリ名・アイコン・表示モード）
 service-worker.js                    オフライン起動用のキャッシュ制御
 icons/                               PWAアイコン（192x192 / 512x512。元データは icon.svg）
-esp32-remote-control.code-workspace  VS Code 用（リポジトリと firmware を同時に開く）
+esp32-rc-car.code-workspace          VS Code 用（リポジトリと firmware を同時に開く）
 firmware/                            ESP32ファーム（PlatformIOプロジェクト）
   platformio.ini                     ボード・ビルド設定（NimBLE-Arduinoを使用）
   src/config.h                       ピン割り当て・UUID・速度や電圧のしきい値
@@ -127,7 +127,7 @@ GPIO8のLEDがLOWで点灯する基板を前提にしている。逆の場合は
 
 ### ファーム側（ESP32-C3）
 
-VS Codeで `esp32-remote-control.code-workspace` を開き、PlatformIOでビルド・書き込みする。
+VS Codeで `esp32-rc-car.code-workspace` を開き、PlatformIOでビルド・書き込みする。
 CLIの場合:
 
 ```bash

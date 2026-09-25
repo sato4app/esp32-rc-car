@@ -1,7 +1,7 @@
 // アプリシェルをキャッシュしてオフラインでも起動できるようにする。
 // 配信ファイルを変更したら CACHE_VERSION を上げること。
 const CACHE_VERSION = 'v1';
-const CACHE_NAME = `esp32-remote-control-${CACHE_VERSION}`;
+const CACHE_NAME = `esp32-rc-car-${CACHE_VERSION}`;
 
 // GitHub Pages のプロジェクトページ（/リポジトリ名/ 配下）でも動くよう相対パスで指定する
 const APP_SHELL = [

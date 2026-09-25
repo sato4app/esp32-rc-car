@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- アプリアイコンの元データ。icon-192.png / icon-512.png はこれを書き出したもの。
+       maskable（OSが丸などに切り抜く）でも欠けないよう、絵は中心から半径205以内に収める -->
+  <rect width="512" height="512" fill="#00695c"/>
+  <!-- 電波: 車の上に弧を2本 -->
+  <g fill="none" stroke="#9ff0e0" stroke-linecap="round" stroke-width="20">
+    <path d="M 206 128 Q 256 88 306 128"/>
+    <path d="M 176 100 Q 256 36 336 100"/>
+  </g>
+  <!-- 車体を上から見た形（左右に駆動輪、後ろに補助輪） -->
+  <g fill="#1b1f24">
+    <rect x="130" y="230" width="44" height="96" rx="12"/>
+    <rect x="338" y="230" width="44" height="96" rx="12"/>
+    <circle cx="256" cy="390" r="18"/>
+  </g>
+  <rect x="172" y="170" width="168" height="220" rx="36" fill="#ffffff"/>
+  <!-- 基板 -->
+  <rect x="212" y="214" width="88" height="64" rx="8" fill="#00695c"/>
+  <circle cx="256" cy="330" r="16" fill="#9ff0e0"/>
+</svg>

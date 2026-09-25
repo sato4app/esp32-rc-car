@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#00695c">
+  <meta name="description" content="スマホからBLEで操作する2WD戦車式リモコンカー">
+  <title>ESP32 RC Car</title>
+
+  <!-- PWA（GitHub Pagesのプロジェクトページでも動くよう相対パス） -->
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+
+  <style>
+    :root {
+      --theme: #00695c;
+      --bg: #f4f6fa;
+      --fg: #1b1f24;
+      --sub: #5b6472;
+      --border: #c9d2e3;
+      --ok: #1a7f37;
+      --warn: #b26a00;
+      --error: #c62828;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    header {
+      background: var(--theme);
+      color: #fff;
+      padding: calc(12px + env(safe-area-inset-top)) 16px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    header h1 { font-size: 18px; margin: 0; }
+    /* タイトルは押すと最新版を確認するが、見た目はただの文字のままにする */
+    #titleBtn {
+      flex: none;
+      min-height: 0;
+      min-width: 0;
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      background: none;
+      color: inherit;
+      font: inherit;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #toast {
+      position: fixed;
+      left: 50%;
+      bottom: calc(16px + env(safe-area-inset-bottom));
+      transform: translateX(-50%);
+      max-width: calc(100% - 32px);
+      padding: 10px 16px;
+      border-radius: 8px;
+      background: rgba(27, 31, 36, 0.9);
+      color: #fff;
+      font-size: 14px;
+      z-index: 10;
+    }
+    #status {
+      font-size: 13px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.18);
+      white-space: nowrap;
+    }
+    #status.connected { background: var(--ok); }
+    main { padding: 16px; max-width: 720px; margin: 0 auto; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+    .row:last-child { margin-bottom: 0; }
+    button {
+      flex: 1 1 auto;
+      min-height: 48px;
+      min-width: 120px;
+      padding: 12px 16px;
+      font-size: 16px;
+      border: 1px solid var(--theme);
+      border-radius: 8px;
+      background: var(--theme);
+      color: #fff;
+      cursor: pointer;
+    }
+    button.secondary { background: #fff; color: var(--theme); }
+    button:disabled { background: #dfe3ea; border-color: var(--border); color: #8a8f98; cursor: default; }
+    .card {
+      padding: 16px;
+      margin-bottom: 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fff;
+    }
+    .card h2 { font-size: 16px; margin: 0 0 12px; }
+    .hint { font-size: 13px; color: var(--sub); margin: 8px 0 0; }
+
+    /* ===== 車の状態 ===== */
+    .stat-grid {
+      display: grid;
+      grid-template-columns: 4em 1fr 5.5em;
+      gap: 8px;
+      align-items: center;
+      font-variant-numeric: tabular-nums;
+    }
+    .stat-grid .label { font-size: 14px; font-weight: bold; color: var(--sub); }
+    .stat-grid .value { text-align: right; font-size: 15px; }
+    .stat-grid progress { width: 100%; height: 12px; accent-color: var(--theme); }
+    #batteryBar.low { accent-color: var(--error); }
+    /* モーター出力は中央を0として左右に伸びるバーで表す */
+    .meter {
+      position: relative;
+      height: 12px;
+      border-radius: 6px;
+      background: #e6e9ef;
+      overflow: hidden;
+    }
+    .meter::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 0;
+      bottom: 0;
+      width: 1px;
+      background: var(--sub);
+    }
+    .meter-fill {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 50%;
+      width: 0;
+      background: var(--theme);
+    }
+    .meter-fill.reverse { background: var(--warn); }
+    .card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+    .card-head h2 { margin: 0; }
+    #carState { font-size: 15px; font-weight: bold; text-align: right; }
+    #carState.ready { color: var(--ok); }
+    #carState.warn { color: var(--warn); }
+    #carState.error { color: var(--error); }
+
+    /* ===== ジョイスティック ===== */
+    #pad {
+      position: relative;
+      width: min(100%, 300px, 42vh); /* 非常停止ボタンまで1画面に収める */
+      aspect-ratio: 1;
+      margin: 0 auto;
+      border-radius: 50%;
+      background: radial-gradient(circle, #e8f3f1 0%, #d3e6e2 100%);
+      border: 2px solid var(--border);
+      touch-action: none; /* ドラッグで画面がスクロール・拡大しないようにする */
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    /* 十字のガイド線 */
+    #pad::before, #pad::after {
+      content: "";
+      position: absolute;
+      background: rgba(0, 105, 92, 0.18);
+    }
+    #pad::before { left: 50%; top: 8%; bottom: 8%; width: 2px; margin-left: -1px; }
+    #pad::after { top: 50%; left: 8%; right: 8%; height: 2px; margin-top: -1px; }
+    #knob {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 34%;
+      aspect-ratio: 1;
+      margin: -17% 0 0 -17%;
+      border-radius: 50%;
+      background: var(--theme);
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25);
+      z-index: 1;
+      pointer-events: none;
+    }
+    #pad.disabled { opacity: 0.4; }
+    #padValue {
+      text-align: center;
+      margin: 12px 0;
+      font-size: 15px;
+      font-variant-numeric: tabular-nums;
+      color: var(--sub);
+    }
+    .slider-row {
+      display: grid;
+      grid-template-columns: 5.5em 1fr 3.5em;
+      gap: 8px;
+      align-items: center;
+      font-size: 14px;
+    }
+    .slider-row label { font-weight: bold; color: var(--sub); }
+    .slider-row output { text-align: right; font-variant-numeric: tabular-nums; }
+    input[type="range"] { width: 100%; min-height: 40px; accent-color: var(--theme); }
+
+    /* ===== 非常停止 ===== */
+    #estopBtn {
+      width: 100%;
+      min-height: 64px;
+      font-size: 20px;
+      font-weight: bold;
+      border-color: var(--error);
+      background: var(--error);
+    }
+    #estopBtn.active { background: #fff; color: var(--error); }
+    #estopBtn:disabled { background: #dfe3ea; border-color: var(--border); color: #8a8f98; }
+
+    #log {
+      width: 100%;
+      height: 20vh;
+      min-height: 110px;
+      padding: 8px;
+      font-size: 14px;
+      font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fff;
+      resize: vertical;
+    }
+    #notice {
+      padding: 12px;
+      margin-bottom: 12px;
+      border-radius: 8px;
+      background: #fff4e5;
+      border: 1px solid #f0b429;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1><button id="titleBtn" title="最新版を確認">ESP32 RC Car</button></h1>
+    <span id="status">未接続</span>
+  </header>
+
+  <main>
+    <p id="notice" hidden></p>
+
+    <div class="row">
+      <button id="connectBtn">ESP32に接続</button>
+      <button id="disconnectBtn" class="secondary" disabled>切断</button>
+      <button id="installBtn" class="secondary" hidden>ホーム画面に追加</button>
+    </div>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>操作</h2>
+        <span id="carState">—</span>
+      </div>
+      <div id="pad" class="disabled"><div id="knob"></div></div>
+      <p id="padValue">前後 0 ／ 旋回 0</p>
+      <div class="slider-row">
+        <label for="speedLimit">最高速度</label>
+        <input type="range" id="speedLimit" min="20" max="100" step="10" value="60">
+        <output id="speedLimitText" for="speedLimit">60%</output>
+      </div>
+      <p class="hint">丸の中をドラッグして操作します（上で前進、左右で旋回）。指を離すと止まります。
+        パソコンでは矢印キーでも操作できます。</p>
+    </section>
+
+    <div class="row">
+      <button id="estopBtn" disabled>非常停止</button>
+    </div>
+
+    <section class="card">
+      <h2>車の状態</h2>
+      <div class="stat-grid">
+        <span class="label">電池</span>
+        <progress id="batteryBar" max="100" value="0"></progress>
+        <span id="batteryText" class="value">—</span>
+
+        <span class="label">左</span>
+        <div class="meter"><div id="leftMeter" class="meter-fill"></div></div>
+        <span id="leftText" class="value">—</span>
+
+        <span class="label">右</span>
+        <div class="meter"><div id="rightMeter" class="meter-fill"></div></div>
+        <span id="rightText" class="value">—</span>
+      </div>
+    </section>
+
+    <textarea id="log" readonly></textarea>
+  </main>
+
+  <div id="toast" role="status" hidden></div>
+
+  <script>
+    // ===== ESP32側（firmware/src/config.h, BleLink.h）と合わせる値 =====
+    const SERVICE_UUID = "8f1e0001-6c1b-4f5a-9d3e-2a7c5b4e1d00";
+    const CONTROL_UUID = "8f1e0002-6c1b-4f5a-9d3e-2a7c5b4e1d00";   // Webからの書込先
+    const TELEMETRY_UUID = "8f1e0003-6c1b-4f5a-9d3e-2a7c5b4e1d00"; // Webでの受取先
+    const DEVICE_NAME = "ESP32-RC-Car";
+    const FLAG_EMERGENCY_STOP = 0x01;
+    const STATE_LOW_BATTERY = 0x01;
+    const STATE_FAILSAFE = 0x02;
+    const STATE_EMERGENCY_STOP = 0x04;
+
+    const SEND_INTERVAL_MS = 50;       // 操作データの送信周期（20Hz）。ESP32は300ms途絶で止まる
+    const DEADZONE = 0.08;             // 中央付近の遊び（指のぶれで動かないように）
+    const BATTERY_EMPTY_MV = 6400;     // 2S Li-ionの残量0%とみなす電圧（ESP32の停止電圧と同じ）
+    const BATTERY_FULL_MV = 8400;      // 満充電
+    const SETTINGS_KEY = 'esp32-remote-control-settings';
+
+    let bluetoothDevice;
+    let controlCharacteristic; // 送信用
+    let sending = false;       // 書き込み中は次の書き込みをしない（GATTの同時操作エラーを避ける）
+    let sendErrorLogged = false;
+    let emergencyStop = false;
+    let wakeLock = null;
+
+    // 操作の入力値（-1〜1）。送信時に最高速度をかけて -100〜100 にする
+    const input = { x: 0, y: 0 };
+
+    const connectBtn = document.getElementById('connectBtn');
+    const disconnectBtn = document.getElementById('disconnectBtn');
+    const installBtn = document.getElementById('installBtn');
+    const estopBtn = document.getElementById('estopBtn');
+    const pad = document.getElementById('pad');
+    const knob = document.getElementById('knob');
+    const padValue = document.getElementById('padValue');
+    const speedLimit = document.getElementById('speedLimit');
+    const speedLimitText = document.getElementById('speedLimitText');
+    const carState = document.getElementById('carState');
+    const batteryBar = document.getElementById('batteryBar');
+    const batteryText = document.getElementById('batteryText');
+    const logArea = document.getElementById('log');
+    const statusEl = document.getElementById('status');
+    const notice = document.getElementById('notice');
+
+    function log(message) {
+      const time = new Date().toLocaleTimeString('ja-JP', { hour12: false });
+      logArea.value += '[' + time + '] ' + message + '\n';
+      logArea.scrollTop = logArea.scrollHeight;
+    }
+
+    // 接続状態に応じてUIをまとめて切り替える
+    function setConnected(connected) {
+      statusEl.textContent = connected ? '接続中' : '未接続';
+      statusEl.classList.toggle('connected', connected);
+      connectBtn.disabled = connected;
+      disconnectBtn.disabled = !connected;
+      estopBtn.disabled = !connected;
+      setEmergencyStop(false);
+      setInput(0, 0);
+      updatePadEnabled();
+      if (connected) {
+        requestWakeLock();
+      } else {
+        releaseWakeLock();
+        showTelemetry(null);
+      }
+    }
+
+    function showNotice(html) {
+      notice.innerHTML = html;
+      notice.hidden = false;
+    }
+
+    // Web Bluetoothが使える環境かを起動時に判定する
+    function checkEnvironment() {
+      if (!window.isSecureContext) {
+        showNotice('このページは <b>HTTPS または localhost</b> で開く必要があります。'
+          + 'Web Bluetooth APIは安全なコンテキストでのみ動作します。');
+        connectBtn.disabled = true;
+        return;
+      }
+      if (!navigator.bluetooth) {
+        showNotice('このブラウザは <b>Web Bluetooth API</b> に対応していません。'
+          + 'Android版Chrome、またはデスクトップ版のChrome/Edgeで開いてください'
+          + '（iOSのSafari・Firefoxは非対応）。');
+        connectBtn.disabled = true;
+      }
+    }
+
+    // ===== 接続 =====
+    connectBtn.addEventListener('click', async () => {
+      try {
+        log('デバイスを検索中...');
+        bluetoothDevice = await navigator.bluetooth.requestDevice({
+          filters: [{ name: DEVICE_NAME }],
+          optionalServices: [SERVICE_UUID]
+        });
+
+        // 切断検知はデバイスごとに一度だけ登録する（再接続時の二重登録を避ける）
+        bluetoothDevice.addEventListener('gattserverdisconnected', () => {
+          log('❌ 切断されました');
+          controlCharacteristic = null;
+          setConnected(false);
+        });
+
+        log('接続しています...');
+        const server = await bluetoothDevice.gatt.connect();
+        const service = await server.getPrimaryService(SERVICE_UUID);
+
+        // 状態（Telemetry）の受信
+        const telemetryCharacteristic = await service.getCharacteristic(TELEMETRY_UUID);
+        await telemetryCharacteristic.startNotifications();
+        telemetryCharacteristic.addEventListener('characteristicvaluechanged', (event) => {
+          showTelemetry(parseTelemetry(event.target.value));
+        });
+
+        // 操作データ（Control）の送信先
+        controlCharacteristic = await service.getCharacteristic(CONTROL_UUID);
+
+        log('✅ 接続完了！');
+        setConnected(true);
+
+      } catch (error) {
+        log('エラー: ' + error);
+      }
+    });
+
+    disconnectBtn.addEventListener('click', () => {
+      if (bluetoothDevice && bluetoothDevice.gatt.connected) {
+        bluetoothDevice.gatt.disconnect();
+      }
+    });
+
+    // ===== 操作データの送信 =====
+    // 値が変わらなくても一定周期で送り続ける（ESP32側はこれが途絶えると止まる）
+    //   [0] 前後 int8 -100〜100 / [1] 旋回 int8 -100〜100 / [2] フラグ bit0: 非常停止
+    function buildPacket() {
+      const limit = Number(speedLimit.value) / 100;
+      const throttle = emergencyStop ? 0 : Math.round(input.y * limit * 100);
+      const steer = emergencyStop ? 0 : Math.round(input.x * limit * 100);
+      const packet = new Int8Array([throttle, steer, emergencyStop ? FLAG_EMERGENCY_STOP : 0]);
+      return packet;
+    }
+
+    async function sendControl() {
+      if (!controlCharacteristic || sending) return;
+      sending = true;
+      try {
+        await controlCharacteristic.writeValueWithoutResponse(buildPacket());
+        sendErrorLogged = false;
+      } catch (error) {
+        // 20回/秒で送るので、同じエラーを何度も書かない
+        if (!sendErrorLogged) log('送信エラー: ' + error);
+        sendErrorLogged = true;
+      } finally {
+        sending = false;
+      }
+    }
+
+    setInterval(sendControl, SEND_INTERVAL_MS);
+
+    // ===== 状態の受信 =====
+    //   [0-1] 電池mV uint16 / [2] 状態 uint8 / [3] 左出力 int8 / [4] 右出力 int8
+    function parseTelemetry(view) {
+      return {
+        batteryMv: view.getUint16(0, true),
+        state: view.getUint8(2),
+        left: view.getInt8(3),
+        right: view.getInt8(4)
+      };
+    }
+
+    function setMeter(id, value) {
+      const fill = document.getElementById(id + 'Meter');
+      const width = Math.min(Math.abs(value), 100) / 2; // 片側は全体の50%
+      fill.style.width = width + '%';
+      fill.style.left = value >= 0 ? '50%' : (50 - width) + '%';
+      fill.classList.toggle('reverse', value < 0);
+      document.getElementById(id + 'Text').textContent = value > 0 ? '+' + value + '%' : value + '%';
+    }
+
+    function setCarState(text, level) {
+      carState.textContent = text;
+      carState.className = level;
+    }
+
+    // telemetry が null なら未接続として表示を戻す
+    function showTelemetry(telemetry) {
+      if (!telemetry) {
+        setCarState('—', '');
+        batteryBar.value = 0;
+        batteryBar.classList.remove('low');
+        batteryText.textContent = '—';
+        setMeter('left', 0);
+        setMeter('right', 0);
+        document.getElementById('leftText').textContent = '—';
+        document.getElementById('rightText').textContent = '—';
+        return;
+      }
+
+      if (telemetry.batteryMv === 0) {
+        batteryBar.value = 0;
+        batteryText.textContent = 'USB給電';
+      } else {
+        const percent = (telemetry.batteryMv - BATTERY_EMPTY_MV) / (BATTERY_FULL_MV - BATTERY_EMPTY_MV) * 100;
+        batteryBar.value = Math.max(0, Math.min(100, percent));
+        batteryText.textContent = (telemetry.batteryMv / 1000).toFixed(2) + ' V';
+      }
+      batteryBar.classList.toggle('low', (telemetry.state & STATE_LOW_BATTERY) !== 0);
+      setMeter('left', telemetry.left);
+      setMeter('right', telemetry.right);
+
+      if (telemetry.state & STATE_LOW_BATTERY) {
+        setCarState('低電圧で停止中（充電してください）', 'error');
+      } else if (telemetry.state & STATE_EMERGENCY_STOP) {
+        setCarState('非常停止中', 'error');
+      } else if (telemetry.state & STATE_FAILSAFE) {
+        setCarState('停止中（操作待ち）', 'warn');
+      } else {
+        setCarState('走行可', 'ready');
+      }
+    }
+
+    // ===== ジョイスティック =====
+    function setInput(x, y) {
+      // 円の外に出たら円周上に戻す
+      const length = Math.hypot(x, y);
+      if (length > 1) {
+        x /= length;
+        y /= length;
+      }
+      // 中央付近は0にする。遊びの外側は0から滑らかに立ち上げる
+      const scaled = length < DEADZONE ? 0 : (Math.min(length, 1) - DEADZONE) / (1 - DEADZONE);
+      const ratio = length > 0 ? scaled / Math.min(length, 1) : 0;
+      input.x = x * ratio;
+      input.y = y * ratio;
+
+      // つまみは指の位置（遊びをかける前）に置く。
+      // 移動量の単位はつまみ自身の幅（円の34%）で、最大移動量は円の33%なので 33/34 ≒ 97%
+      knob.style.transform = `translate(${x * 97}%, ${-y * 97}%)`;
+      const limit = Number(speedLimit.value) / 100;
+      padValue.textContent = `前後 ${Math.round(input.y * limit * 100)} ／ 旋回 ${Math.round(input.x * limit * 100)}`;
+    }
+
+    function padActive() {
+      return !!controlCharacteristic && !emergencyStop;
+    }
+
+    function updatePadEnabled() {
+      pad.classList.toggle('disabled', !padActive());
+    }
+
+    function inputFromPointer(event) {
+      const rect = pad.getBoundingClientRect();
+      const radius = rect.width / 2 * 0.66; // つまみが円からはみ出さない範囲を最大にする
+      const x = (event.clientX - rect.left - rect.width / 2) / radius;
+      const y = -(event.clientY - rect.top - rect.height / 2) / radius; // 画面の上を前進(+)にする
+      setInput(x, y);
+    }
+
+    pad.addEventListener('pointerdown', (event) => {
+      if (!padActive()) return;
+      pad.setPointerCapture(event.pointerId); // 指が円の外に出ても追いかける
+      inputFromPointer(event);
+    });
+    pad.addEventListener('pointermove', (event) => {
+      if (pad.hasPointerCapture(event.pointerId)) inputFromPointer(event);
+    });
+    // 指を離したら止める
+    for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+      pad.addEventListener(type, () => setInput(0, 0));
+    }
+
+    // パソコンでの動作確認用（矢印キー）
+    const keys = new Set();
+    function inputFromKeys() {
+      const x = (keys.has('ArrowRight') ? 1 : 0) - (keys.has('ArrowLeft') ? 1 : 0);
+      const y = (keys.has('ArrowUp') ? 1 : 0) - (keys.has('ArrowDown') ? 1 : 0);
+      setInput(x, y);
+    }
+    document.addEventListener('keydown', (event) => {
+      if (!event.key.startsWith('Arrow') || !padActive()) return;
+      event.preventDefault();
+      keys.add(event.key);
+      inputFromKeys();
+    });
+    document.addEventListener('keyup', (event) => {
+      if (!keys.delete(event.key)) return;
+      inputFromKeys();
+    });
+
+    // ===== 最高速度（ブラウザに保存） =====
+    function showSpeedLimit() {
+      speedLimitText.textContent = speedLimit.value + '%';
+      setInput(input.x, input.y);
+    }
+
+    speedLimit.addEventListener('input', () => {
+      showSpeedLimit();
+      try {
+        localStorage.setItem(SETTINGS_KEY, JSON.stringify({ speedLimit: Number(speedLimit.value) }));
+      } catch { /* 保存できなくても操作には影響しない */ }
+    });
+
+    function loadSettings() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY));
+        if (saved && saved.speedLimit) speedLimit.value = saved.speedLimit;
+      } catch { /* 初期値のまま使う */ }
+      showSpeedLimit();
+    }
+
+    // ===== 非常停止 =====
+    // 押すと停止し続け、もう一度押すまで操作を受け付けない
+    function setEmergencyStop(active) {
+      emergencyStop = active;
+      estopBtn.textContent = active ? '非常停止を解除' : '非常停止';
+      estopBtn.classList.toggle('active', active);
+      if (active) {
+        setInput(0, 0);
+        keys.clear();
+      }
+      updatePadEnabled();
+    }
+
+    estopBtn.addEventListener('click', () => {
+      setEmergencyStop(!emergencyStop);
+      if (emergencyStop) {
+        if (navigator.vibrate) navigator.vibrate(100);
+        log('非常停止しました');
+        sendControl(); // 次の周期を待たずに送る
+      } else {
+        log('非常停止を解除しました');
+      }
+    });
+
+    // ===== 画面の状態 =====
+    // 操作中に画面が消えないようにする（接続中のみ）
+    async function requestWakeLock() {
+      if (!('wakeLock' in navigator) || document.hidden) return;
+      try {
+        wakeLock = await navigator.wakeLock.request('screen');
+      } catch (error) {
+        log('画面の自動消灯を止められませんでした: ' + error);
+      }
+    }
+
+    function releaseWakeLock() {
+      if (wakeLock) wakeLock.release();
+      wakeLock = null;
+    }
+
+    // 別のアプリに切り替えたら入力を0にする（送信が止まればESP32側でも止まる）
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        setInput(0, 0);
+        keys.clear();
+        sendControl();
+      } else if (controlCharacteristic) {
+        requestWakeLock(); // 裏に回ると解除されるため取り直す
+      }
+    });
+
+    // ホーム画面への追加（Androidのインストールプロンプト）
+    let deferredPrompt = null;
+    window.addEventListener('beforeinstallprompt', (event) => {
+      event.preventDefault();
+      deferredPrompt = event;
+      installBtn.hidden = false;
+    });
+    installBtn.addEventListener('click', async () => {
+      if (!deferredPrompt) return;
+      deferredPrompt.prompt();
+      await deferredPrompt.userChoice;
+      deferredPrompt = null;
+      installBtn.hidden = true;
+    });
+    window.addEventListener('appinstalled', () => {
+      installBtn.hidden = true;
+      log('ホーム画面に追加しました');
+    });
+
+    // Service Workerの登録（オフライン起動用）
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('service-worker.js')
+          .catch((error) => console.error('Service Workerの登録に失敗:', error));
+      });
+    }
+
+    // ===== 最新版の確認（タイトルを押す） =====
+    // service-worker.js の CACHE_NAME の接頭辞と合わせる（キャッシュ名から版を読み取る）
+    const CACHE_PREFIX = 'esp32-remote-control-';
+    const titleBtn = document.getElementById('titleBtn');
+    const toast = document.getElementById('toast');
+    let toastTimerId = null;
+    let checkingUpdate = false;
+
+    function showToast(message) {
+      toast.textContent = message;
+      toast.hidden = false;
+      clearTimeout(toastTimerId);
+      toastTimerId = setTimeout(() => { toast.hidden = true; }, 3000);
+    }
+
+    // 今の版（例: v1）。わからなければ空文字
+    async function currentVersion() {
+      try {
+        const name = (await caches.keys()).find((key) => key.startsWith(CACHE_PREFIX));
+        return name ? name.slice(CACHE_PREFIX.length) : '';
+      } catch {
+        return '';
+      }
+    }
+
+    // 新しい service-worker.js があれば入れ替わりを待って再読み込みする
+    // （配信ファイルを変えたときは CACHE_VERSION を上げる決まりなので、SWの変化＝新しい版）
+    async function checkForUpdate() {
+      if (checkingUpdate) return;
+      if (controlCharacteristic) {
+        showToast('走行中は確認できません。切断してから押してください');
+        return;
+      }
+      if (!('serviceWorker' in navigator)) {
+        showToast('この環境では最新版を確認できません');
+        return;
+      }
+      checkingUpdate = true;
+      showToast('最新版を確認しています...');
+      try {
+        const registration = await navigator.serviceWorker.getRegistration();
+        if (!registration) {
+          location.reload(); // SWが未登録なら、読み込み直すだけで最新になる
+          return;
+        }
+        await registration.update();
+        const newWorker = registration.installing || registration.waiting;
+        if (!newWorker) {
+          const version = await currentVersion();
+          showToast(version ? `最新版です（${version}）` : '最新版です');
+          checkingUpdate = false;
+          return;
+        }
+        showToast('新しい版を読み込んでいます...');
+        const reloadWhenActivated = () => {
+          if (newWorker.state === 'activated') location.reload();
+          if (newWorker.state === 'redundant') {
+            showToast('新しい版の読み込みに失敗しました');
+            checkingUpdate = false;
+          }
+        };
+        newWorker.addEventListener('statechange', reloadWhenActivated);
+        reloadWhenActivated();
+      } catch (error) {
+        showToast('最新版を確認できませんでした（通信を確認してください）');
+        log('最新版の確認に失敗: ' + error);
+        checkingUpdate = false;
+      }
+    }
+
+    titleBtn.addEventListener('click', checkForUpdate);
+
+    checkEnvironment();
+    loadSettings();
+    showTelemetry(null);
+  </script>
+</body>
+</html>

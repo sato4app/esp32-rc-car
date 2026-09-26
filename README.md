@@ -10,6 +10,8 @@ AndroidのChrome（Web Bluetooth）から、ESP32-C3を載せた2WD戦車式リ�
 
 ## ハード構成
 
+部品の仕様・電源系・ノイズ対策などの詳細は [docs/hardware.md](docs/hardware.md) にまとめている。
+
 ```
 [Android スマホ]  PWA (Web Bluetooth)
       │  BLE
@@ -44,7 +46,7 @@ AndroidのChrome（Web Bluetooth）から、ESP32-C3を載せた2WD戦車式リ�
 
 | その他 | 接続先 |
 |---|---|
-| 電池電圧 | 電池＋ ─ 100kΩ ─ GPIO3 ─ 33kΩ ─ GND |
+| 電池電圧 | 電池＋（電源SWの後） ─ 100kΩ ─ GPIO3 ─ 33kΩ ─ GND |
 | DC-DC 出力 | ESP32の5Vピン |
 | 状態LED | GPIO8（基板上のLED） |
 
@@ -68,6 +70,7 @@ index.html                           Web側（接続・ジョイスティック�
 manifest.json                        PWA設定（アプリ名・アイコン・表示モード）
 service-worker.js                    オフライン起動用のキャッシュ制御
 icons/                               PWAアイコン（192x192 / 512x512。元データは icon.svg）
+docs/hardware.md                     ハードウェア構成（部品表・配線・電源系）
 esp32-rc-car.code-workspace          VS Code 用（リポジトリと firmware を同時に開く）
 firmware/                            ESP32ファーム（PlatformIOプロジェクト）
   platformio.ini                     ボード・ビルド設定（NimBLE-Arduinoを使用）

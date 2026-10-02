@@ -53,4 +53,9 @@
 #define VBAT_LOW_HOLD_MS   3000 // 加速時の一瞬の電圧低下では止めない
 #define VBAT_PRESENT_MV    3000 // これ未満は「電池なし」（USB給電で開発中）とみなす
 
+// 電池電圧の監視。分圧抵抗を付ける前（Step 2-1まで）は、GPIO3が浮いていると
+// 低電圧と誤判定して走らなくなるため、false にして監視を止めてよい。
+// 電池を載せる前（Step 2-2）に必ず true に戻す。false のままだと電池の過放電を防げない。
+#define VBAT_MONITOR_ENABLED false
+
 #define TELEMETRY_INTERVAL_MS 250 // スマホへ状態を送る周期

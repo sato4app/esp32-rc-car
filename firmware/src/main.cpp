@@ -64,6 +64,10 @@ void handleSerialCommand(String command) {
     drive.stop();
     drive.commandFor(0, 0, 0);
   } else if (command == "B") {
+    if (!VBAT_MONITOR_ENABLED) {
+      Serial.println("電池: 監視を止めています（config.h の VBAT_MONITOR_ENABLED）");
+      return;
+    }
     Serial.printf("電池: %u mV%s\n", battery.millivolts(), battery.low() ? "（低電圧）" : "");
   } else if (command.startsWith("D ")) {
     int throttle = 0, steer = 0;
@@ -97,6 +101,9 @@ void setup() {
   motor.begin(); // 起動直後にモーターが動かないよう、最初に止めておく
   battery.begin();
   delay(1000); // ESP32-C3のUSBシリアル認識待ち
+  if (!VBAT_MONITOR_ENABLED) {
+    Serial.println("注意: 電池電圧の監視を止めています。電池を載せる前に config.h の VBAT_MONITOR_ENABLED を true に戻してください。");
+  }
   Serial.println("BLE起動中...");
 
   BleLink::begin();
